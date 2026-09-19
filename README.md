@@ -26,5 +26,13 @@ powershell -ExecutionPolicy Bypass -File .\Script2-PostInstall-Debloat.ps1
 # keep bits: -KeepStore -KeepEdge -KeepDefender
 ```
 
+## WSL / winget
+
+- Script2 installs neither WSL nor the Store. After reboot, install WSL
+  manually: `wsl --install -d Ubuntu`. The script removes no WSL /
+  Virtual Machine Platform payloads, and kernel/distro downloads come from
+  aka.ms, so install works with no Store and no Windows Update.
+- winget (`Microsoft.DesktopAppInstaller`) is left exactly as found.
+
 See the header comments in each script for full details and warnings
 (Edge/Store removal is destructive; Defender-off reduces security — as requested).

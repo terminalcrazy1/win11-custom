@@ -11,6 +11,14 @@ Original-release Windows 11 24H2 Pro workflow: build the ISO via UUP Dump, then 
   Edge + WebView2, Xbox, Copilot, Teams, new Outlook, bloat AppX, then applies
   WU-to-localhost, privacy, OneDrive, AI/Recall, Defender/BitLocker-off,
   dark theme, taskbar, Explorer, GameDVR, power tweaks. Reboot after.
+  Installs nothing; `wsl --install` stays a manual step and keeps working.
+- `Script3-Maintenance.ps1` — Admin toggle for the Script2 WU lockdown:
+  `-Status` (default), `-UnblockWU` (allow capability/FoD downloads),
+  `-ReblockWU` (restore exact Script2 values). No Store changes.
+- `Script4-Install-Apps.ps1` — Admin app installer, no Store needed:
+  Firefox, Git, Discord, Spotify, Steam, Intel DSA via winget community
+  source; NVIDIA App + HyperX NGENUITY via vendor direct downloads;
+  aw-screentime-tagger via git clone + its installer.
 
 ## Quick start
 
@@ -24,6 +32,15 @@ powershell -ExecutionPolicy Bypass -File .\Script1-Build-Win11-24H2-ISO.ps1
 # 2. Debloat (Admin)
 powershell -ExecutionPolicy Bypass -File .\Script2-PostInstall-Debloat.ps1
 # keep bits: -KeepStore -KeepEdge -KeepDefender
+
+# 3. Reboot, then WSL manually + apps (Admin)
+wsl --install -d Ubuntu
+powershell -ExecutionPolicy Bypass -File .\Script4-Install-Apps.ps1
+
+# Anytime: toggle the WU lockdown for on-demand features (Admin)
+powershell -ExecutionPolicy Bypass -File .\Script3-Maintenance.ps1 -UnblockWU
+Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
+powershell -ExecutionPolicy Bypass -File .\Script3-Maintenance.ps1 -ReblockWU
 ```
 
 ## WSL / winget

@@ -10,6 +10,10 @@
 # WARNING: Edge/WebView2 + Store removal is destructive and breaks Widgets,
 # Phone Link, WebView-dependent apps. Defender-off + BitLocker-off reduces security.
 # This is exactly what was requested - no undo except reinstall.
+# NOTE: Store is NEVER reinstalled by this script (winget/App Installer left as-is).
+# WSL is pre-provisioned (features enabled from local inbox payloads) BEFORE the
+# Windows Update localhost lockdown, so `wsl --install` still works afterwards
+# (kernel/distro download uses aka.ms, not WU or Store).
 
 [CmdletBinding()]
 param(
@@ -114,11 +118,15 @@ try {
 # 2. MICROSOFT STORE (full)
 # ============================================================
 if (-not $KeepStore) {
-    Step "2. Microsoft Store full removal"
+    Step "2. Microsoft Store full removal (winget/App Installer untouched, Store never reinstalled)"
     Remove-AppxAll @("Microsoft.WindowsStore", "Microsoft.StorePurchaseApp")
+    # Explicit guard: NEVER touch DesktopAppInstaller (winget) or re-add Store.
+    # If winget is missing at this point it was already missing - we do not install it.
     # Block Store reinstall via ContentDeliveryManager + policy
     Set-Reg "HKLM:\SOFTWARE\Policies\Microsoft\WindowsStore" "RemoveWindowsStore" 1
     Set-Reg "HKLM:\SOFTWARE\Policies\Microsoft\WindowsStore" "DisableStoreApps" 1
+    if (Get-Command winget -ErrorAction SilentlyContinue) { Info "winget still present: $((Get-Command winget).Source)" }
+    else { Write-Warning "winget not found - left as-is per request (no Store reinstall, no winget install)." }
     OK "Store removed + blocked"
 }
 
@@ -177,7 +185,30 @@ if (-not $KeepEdge) {
 } else { Info "KeepEdge set - skipping Edge removal" }
 
 # ============================================================
+# 3b. WSL PRE-PROVISION (must run BEFORE the WU localhost lockdown below)
+# Enables inbox features from local SxS so later `wsl --install` skips the
+# CBS/Windows-Update fetch step that section 4 deliberately breaks.
+# No Store, no winget changes here.
+# ============================================================
+Step "3b. Pre-enable WSL features (local payloads only)"
+foreach ($feat in @("Microsoft-Windows-Subsystem-Linux", "VirtualMachinePlatform")) {
+    try {
+        $cur = (Get-WindowsOptionalFeature -Online -FeatureName $feat -ErrorAction SilentlyContinue).State
+        if ($cur -ne "Enabled") {
+            Info "Enabling $feat (local source, no WU)..."
+            Enable-WindowsOptionalFeature -Online -FeatureName $feat -All -NoRestart -ErrorAction SilentlyContinue | Out-Null
+        } else { Info "$feat already Enabled" }
+    } catch { Write-Warning "Could not enable $feat : $($_.Exception.Message)" }
+}
+try { wsl --set-default-version 2 2>$null | Out-Null } catch {}
+Info "After reboot, run: wsl --install -d Ubuntu  (or wsl --install --no-distribution)"
+OK "WSL features staged - subsequent wsl --install avoids WU dependency"
+
+# ============================================================
 # 4. WINDOWS UPDATE -> LOCALHOST + BLOCKS + NO FORCED REBOOT
+# NOTE: applied AFTER 3b on purpose. If `wsl --install` ever needs a
+# feature payload not present locally, temporarily revert this section,
+# run wsl --install, then re-run Script2.
 # ============================================================
 Step "4. Redirect Windows Update to localhost + block internet updates + no forced reboots"
 Set-Reg "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" "UseWUServer" 1

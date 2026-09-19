@@ -16,11 +16,14 @@
 # If a vendor URL 404s (they version their links), grab the fresh one from
 # nvidia.com/en-us/software/nvidia-app / hyperx.com/pages/ngenuity and pass:
 #   .\Script4-Install-Apps.ps1 -NvidiaAppUrl <url> -HyperXUrl <url>
+# NOTE: HyperX default is the NEW NGENUITY (2025) 3.x line (primary DOWNLOAD
+# NGENUITY button). The 2.x line (2020-2025, e.g. 2.38.0.0) is the legacy
+# generation for pre-Aug-2025 devices - pass its URL via -HyperXUrl if needed.
 
 [CmdletBinding()]
 param(
     [string]$NvidiaAppUrl = "https://us.download.nvidia.com/nvapp/client/11.0.8.299/NVIDIA_app_v11.0.8.299.exe",
-    [string]$HyperXUrl = "https://files.hyperx.com/software-installers/Ngenuity_Installer/HyperX_NGENUITY_Installer_2.35.0.0.exe",
+    [string]$HyperXUrl = "https://files.hyperx.com/software-installers/ngenuity/stable/3.0.0/HyperX_NGENUITY_Installer.exe",
     [string]$TaggerRepo = "https://github.com/terminalcrazy1/aw-screentime-tagger.git",
     [string]$TaggerDir = "C:\Tools\aw-screentime-tagger",
     [string]$TaggerInstaller = "",   # auto-detect if empty (install.ps1 > setup.ps1 > install/setup .bat/.cmd > setup.py)

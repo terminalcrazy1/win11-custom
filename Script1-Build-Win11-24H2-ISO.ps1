@@ -18,11 +18,12 @@
 param(
     [string]$Lang = "en-us",
     [string]$Edition = "professional",
-    [string]$OutDir = (Join-Path (Get-Location).Path "UUP-24H2-26100.1742"),
+    [string]$OutDir = "C:\UUP-24H2-26100.1742",
     [string]$BuildId = "e1d5e11a-7054-49cf-b9c9-ba54258d5cc6",
     [string]$BuildNumber = "26100.1742",
     [switch]$SkipConvert,
-    [switch]$SkipElevationCheck
+    [switch]$SkipElevationCheck,
+    [switch]$IncludeStoreApps   # default OFF: skip Store-apps download (Script2 removes the Store anyway)
 )
 
 $ErrorActionPreference = "Stop"
@@ -38,6 +39,8 @@ if (-not $isAdmin -and -not $SkipConvert -and -not $SkipElevationCheck) {
 }
 
 # --- 1. Prep dirs ---
+# The UUP converter hard-fails on paths with spaces - default is C:\ root.
+if ($OutDir -match " ") { throw "OutDir contains spaces: '$OutDir'. The UUP converter refuses spaced paths - use e.g. C:\UUP-24H2-26100.1742." }
 Write-Step "Prepare output dir: $OutDir"
 New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
 $zipPath = Join-Path $OutDir "uupdump-24H2-$BuildNumber-$Lang-$Edition.zip"
@@ -91,6 +94,28 @@ Get-ChildItem $workDir | Format-Table Name, Length -AutoSize | Out-String | Writ
 $cmdPath = Join-Path $workDir "uup_download_windows.cmd"
 if (-not (Test-Path $cmdPath)) { throw "uup_download_windows.cmd not found in package. UUP Dump format changed - inspect $workDir manually." }
 
+# --- 4b. Skip Microsoft Store Apps download (default) ---
+# The generated .cmd downloads ~2800 Store-app URLs first and aborts the whole
+# run if that step hits a transient WU error. Script2 removes the Store anyway,
+# so skip it: jump straight to :DOWNLOAD_UUPS and empty the apps list so the
+# converter doesn't expect the missing .appx files. Pass -IncludeStoreApps to
+# keep upstream behavior.
+if (-not $IncludeStoreApps) {
+    $enc = [Text.Encoding]::GetEncoding(437)  # OEM codepage: byte-exact for .cmd
+    $cmdText = [IO.File]::ReadAllText($cmdPath, $enc)
+    if ($cmdText -match "(?m)^:DOWNLOAD_APPS\r?$") {
+        $cmdText = $cmdText -replace "(?m)^(:DOWNLOAD_APPS\r?$)", "`$1`r`necho Skipping Microsoft Store Apps (Script1 default).`r`ngoto :DOWNLOAD_UUPS"
+        [IO.File]::WriteAllText($cmdPath, $cmdText, $enc)
+        OK "Patched converter to skip Store-apps download"
+    } else { Warn "Converter format changed (no :DOWNLOAD_APPS label) - Store apps will download." }
+    $appsList = Join-Path $workDir "CustomAppsList.txt"
+    if (Test-Path $appsList) {
+        Copy-Item -LiteralPath $appsList -Destination ($appsList + ".orig") -Force
+        [IO.File]::WriteAllText($appsList, "")
+        OK "Emptied CustomAppsList.txt (backup: CustomAppsList.txt.orig)"
+    }
+}
+
 # --- 5. Sanity check ConvertConfig (force Pro-only, no extra editions) ---
 $convertIni = Join-Path $workDir "ConvertConfig.ini"
 if (Test-Path $convertIni) {
@@ -114,11 +139,25 @@ Write-Host "Running: $cmdPath"
 Write-Host "It downloads UUPs from Microsoft servers via aria2, then builds ISO with wimlib."
 Write-Host "Do NOT close the new window. Log: $workDir\aria2_download.log"
 
-# uup_download_windows.cmd self-elevates and pauses; run it synchronously so we can copy ISO after.
+# uup_download_windows.cmd self-elevates if needed and calls `pause` on errors,
+# which would hang Script1 forever - feed it <NUL so pauses auto-continue.
+# The UUP API occasionally returns transient WU_REQUEST_FAILED, so retry the
+# whole convert up to 3 times when no ISO appears.
+$maxAttempts = 3
+$attempt = 0
+$isos = $null
 Push-Location $workDir
 try {
-    cmd /c uup_download_windows.cmd
-    if ($LASTEXITCODE -ne 0) { Warn "uup_download_windows.cmd exited with code $LASTEXITCODE - check logs." }
+    while ($attempt -lt $maxAttempts -and -not $isos) {
+        $attempt++
+        if ($attempt -gt 1) {
+            Write-Step "Convert attempt $attempt/$maxAttempts (previous attempt produced no ISO - waiting 60s)"
+            Start-Sleep -Seconds 60
+        }
+        Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$cmdPath`" <NUL" -Wait -WorkingDirectory $workDir
+        $isos = Get-ChildItem -Path $workDir -Filter *.iso -Recurse -ErrorAction SilentlyContinue | Sort-Object Length -Descending
+        if (-not $isos -and $attempt -lt $maxAttempts) { Warn "Attempt $attempt produced no ISO - check $workDir\aria2_download.log for WU_REQUEST_FAILED." }
+    }
 } finally {
     Pop-Location
 }

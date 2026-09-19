@@ -1,0 +1,8 @@
+# UUP working dirs / logs / ISOs
+UUP-*/
+uup-package/
+*.iso
+*.log
+aria2_download.log
+UUPs/
+files/aria2_script.*.txt

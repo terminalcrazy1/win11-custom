@@ -53,12 +53,17 @@ Write-Host $downloadUrl
 Write-Host "Build: $BuildNumber amd64 | Edition: $Edition | Lang: $Lang"
 
 # --- 3. Download package ---
+# NOTE: this endpoint requires POST. A plain GET returns the "List of files"
+# HTML page (not a zip) - Expand-Archive then dies with "End of Central
+# Directory record could not be found."
+# autodl=2 = Windows package (uup_download_windows.cmd). No `updates` flag =
+# base original-release build (no CU integration). No virtualEditions = Pro-only.
 Write-Step "Downloading UUP Dump package"
-# Use BITS-independent Invoke-WebRequest with retry (uupdump.net can throttle)
+$form = @{ autodl = "2" }
 $retries = 3
 for ($i = 1; $i -le $retries; $i++) {
     try {
-        Invoke-WebRequest -Uri $downloadUrl -OutFile $zipPath -UseBasicParsing
+        Invoke-WebRequest -Uri $downloadUrl -Method Post -Body $form -OutFile $zipPath -UseBasicParsing
         break
     } catch {
         Warn "Attempt $i/$retries failed: $($_.Exception.Message)"
@@ -66,8 +71,15 @@ for ($i = 1; $i -le $retries; $i++) {
         Start-Sleep -Seconds 10
     }
 }
+# Validate: must be a ZIP (PK magic), not an HTML error/file-list page
+$magic = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($zipPath)[0..3])
+if (-not $magic.StartsWith("PK")) {
+    $peek = [IO.File]::ReadAllText($zipPath)
+    if ($peek.Length -gt 1500) { $peek = $peek.Substring(0, 1500) }
+    $title = ([regex]::Match($peek, "<title>(.*?)</title>").Groups[1].Value)
+    throw "UUP Dump did not return a zip (server page title: '$title'). Build may be pulled or rate-limited - retry later or pick the package manually via the download.php page."
+}
 $zipSize = (Get-Item $zipPath).Length
-if ($zipSize -lt 10KB) { throw "Downloaded zip suspiciously small ($zipSize bytes). UUP Dump may have rejected edition/lang combo. Try -Lang en-us -Edition professional." }
 OK "Downloaded $([math]::Round($zipSize/1KB)) KB -> $zipPath"
 
 # --- 4. Extract ---

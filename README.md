@@ -1,6 +1,5 @@
-this is deprecated cause I got tired of my OS breaking lol
 # Win11 24H2 Pro (26100.1742) — UUP ISO + Post-Install Debloat
-
+*this doesn't really work and breaks often (hence, it is archived). use at your own risk*
 Original-release Windows 11 24H2 Pro workflow: build the ISO via UUP Dump, then debloat after install.
 
 ## Contents
